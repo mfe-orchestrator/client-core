@@ -1,5 +1,5 @@
 {
-    "name": "@mfe-orchestrator-hub/client",
+    "name": "@mfe-orchestrator/client",
     "version": "0.1.0",
     "description": "Framework agnostic client for MFE Orchestrator: resolves version pinned microfrontend URLs from the console manifest",
     "license": "MIT",

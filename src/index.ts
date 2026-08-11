@@ -4,11 +4,11 @@ import type { Identities, Manifest, OrchestratorConfig } from "./types"
 
 export type { GlobalVariable, Identities, Manifest, Microfrontend, OrchestratorConfig } from "./types"
 
-const PREFIX = "[@mfe-orchestrator-hub/client]"
+const PREFIX = "[@mfe-orchestrator/client]"
 
 const NOT_CONFIGURED = `${PREFIX} call configure() first. Configure the client at the very top of the host entry point, before anything imports a remote:
 
-    import { configure } from "@mfe-orchestrator-hub/client"
+    import { configure } from "@mfe-orchestrator/client"
 
     configure({ backendUrl: "…", projectId: "…", environment: "…" })`
 
