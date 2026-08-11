@@ -10,7 +10,8 @@ import {
     loadSdk,
     manifestFixture,
     requestedUrl,
-    stubFetchOnce
+    stubFetchOnce,
+    stubFlakyFetch
 } from "./helpers"
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -262,17 +263,66 @@ describe("@mfe-orchestrator-hub/client", () => {
             expect(fetchMock).toHaveBeenCalledTimes(1)
         })
 
-        it("given a network failure, when the manifest is fetched, then the original error travels untouched and is not retried", async () => {
-            const fetchMock = vi.fn(async () => {
-                throw new TypeError("Failed to fetch")
-            })
-            vi.stubGlobal("fetch", fetchMock)
+        it("given a network failure, when the manifest is fetched, then the original error travels untouched", async () => {
+            const fetchMock = stubFlakyFetch(Number.POSITIVE_INFINITY)
             const sdk = await loadSdk()
             sdk.configure(baseConfig)
 
             await expect(sdk.manifest()).rejects.toThrow(TypeError)
-            await expect(sdk.manifest()).rejects.toThrow("Failed to fetch")
             expect(fetchMock).toHaveBeenCalledTimes(1)
+        })
+    })
+
+    describe("failed attempts are not memoized", () => {
+        it("given a first attempt that failed, when the manifest is requested again, then a brand new request is issued and can succeed", async () => {
+            const fetchMock = stubFlakyFetch(1)
+            const sdk = await loadSdk()
+            sdk.configure(baseConfig)
+
+            await expect(sdk.manifest()).rejects.toThrow("Failed to fetch")
+            await expect(sdk.manifest()).resolves.toEqual(manifestFixture)
+
+            expect(fetchMock).toHaveBeenCalledTimes(2)
+        })
+
+        it("given three concurrent callers of a failing request, when it rejects, then all three reject on the single shared attempt", async () => {
+            const fetchMock = stubFlakyFetch(Number.POSITIVE_INFINITY)
+            const sdk = await loadSdk()
+            sdk.configure(baseConfig)
+
+            const outcomes = await Promise.allSettled([sdk.manifest(), sdk.manifest(), sdk.remoteUrl("checkout-new")])
+
+            expect(outcomes.map(outcome => outcome.status)).toEqual(["rejected", "rejected", "rejected"])
+            for (const outcome of outcomes) {
+                expect(outcome.status === "rejected" && String(outcome.reason)).toContain("Failed to fetch")
+            }
+            expect(fetchMock).toHaveBeenCalledTimes(1)
+        })
+
+        it("given concurrent callers that all failed on one attempt, when a later caller arrives, then it re-fetches instead of replaying the stale error", async () => {
+            const fetchMock = stubFlakyFetch(1)
+            const sdk = await loadSdk()
+            sdk.configure(baseConfig)
+
+            await Promise.allSettled([sdk.manifest(), sdk.manifest(), sdk.manifest()])
+            expect(fetchMock).toHaveBeenCalledTimes(1)
+
+            await expect(sdk.remoteUrl("checkout-new")).resolves.toBe(manifestFixture.microfrontends[0].url)
+            expect(fetchMock).toHaveBeenCalledTimes(2)
+        })
+
+        it("given a recovered manifest, when it is requested again, then the successful result stays memoized", async () => {
+            const fetchMock = stubFlakyFetch(1)
+            const sdk = await loadSdk()
+            sdk.configure(baseConfig)
+
+            await expect(sdk.manifest()).rejects.toThrow("Failed to fetch")
+            await sdk.manifest()
+            await sdk.manifest()
+            await sdk.remoteUrl("catalog")
+            await sdk.globalVariables()
+
+            expect(fetchMock).toHaveBeenCalledTimes(2)
         })
     })
 

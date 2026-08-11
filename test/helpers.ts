@@ -116,4 +116,26 @@ export const stubFetchOnce = (payload: unknown, init: { ok?: boolean; status?: n
     return fetchMock
 }
 
+/**
+ * A backend that fails its first `failures` calls and serves `payload` from then on. `Infinity`
+ * never recovers.
+ */
+export const stubFlakyFetch = (failures: number, payload: unknown = manifestFixture) => {
+    let calls = 0
+    const fetchMock = vi.fn(async () => {
+        calls++
+        if (calls <= failures) {
+            throw new TypeError("Failed to fetch")
+        }
+        return {
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            json: async () => payload
+        }
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    return fetchMock
+}
+
 export const requestedUrl = (fetchMock: ReturnType<typeof vi.fn>, call = 0): URL => new URL(fetchMock.mock.calls[call]?.[0] as string)

@@ -128,7 +128,8 @@ const { sessionId, deviceId } = identities()
 
 ## How it talks to the backend
 
-One single request per page load, memoized as a promise so that concurrent callers share it:
+One single successful request per page load, memoized as a promise so that concurrent callers share
+it:
 
 ```
 GET {backendUrl}/serve/all/{projectId}/{environment}
@@ -160,10 +161,24 @@ Safari in private mode, disabled storage, hardened browsers that throw on the pr
 itself — and in that case the client falls back to ids held in memory for the lifetime of the page.
 This never throws out of the SDK.
 
+### Successes are cached, failures are not
+
+A resolved manifest is memoized for the lifetime of the page. A failed attempt is not: when the
+shared attempt settles as rejected, the memo is dropped, so the next call to `manifest()`,
+`remoteUrl()` or `globalVariables()` starts a fresh request.
+
+Every caller already waiting on the failed attempt still gets that rejection — the memo is cleared
+once, when the attempt settles, not in each caller's own `catch` — so a failure rejects all of them
+and costs exactly one request.
+
+This is not a retry: nothing here loops, schedules or backs off. It only means that one flaky lookup
+or one 502 during a console redeploy does not condemn the page to reject every `remoteUrl()` until a
+full reload. Recovering is the host app's call, by asking again.
+
 ## Not in v1
 
-No retries, no offline caching, no service worker, and nothing that reads or writes cookies. A
-network error is surfaced exactly as `fetch` produced it.
+No automatic retries, no offline caching, no service worker, and nothing that reads or writes
+cookies. A network error is surfaced exactly as `fetch` produced it.
 
 ## Framework adapters
 

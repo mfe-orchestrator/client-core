@@ -79,18 +79,32 @@ export const configure = (config: OrchestratorConfig): void => {
 /**
  * The whole manifest of the environment, fetched once per page load and memoized as a promise, so
  * that concurrent callers share the single request in flight.
+ *
+ * A successful result is memoized for good. A failed attempt is not: the memo is dropped when the
+ * shared attempt settles as rejected, so the next caller starts a fresh request. That is not a retry
+ * — nothing here loops or backs off — it only means one flaky lookup at boot does not condemn the
+ * page to reject every `remoteUrl()` until a full reload.
  */
 export const manifest = (): Promise<Manifest> => {
     const state = getState()
     const config = state.config
     if (!config) {
-        // Not memoized: the host may still configure the client and retry.
+        // Not memoized: the host may still configure the client and try again.
         return Promise.reject(new Error(NOT_CONFIGURED))
     }
     if (!state.manifestPromise) {
         // Assigned before the first await inside fetchManifest, which is what makes N concurrent
         // callers collapse onto one request.
-        state.manifestPromise = fetchManifest(config)
+        const attempt = fetchManifest(config)
+        state.manifestPromise = attempt
+        // Cleared once, when the shared attempt settles, not in each caller's own catch: every
+        // caller already waiting on this attempt still gets its rejection. The identity check keeps
+        // a late failure from evicting a newer attempt.
+        attempt.catch(() => {
+            if (state.manifestPromise === attempt) {
+                state.manifestPromise = null
+            }
+        })
     }
     return state.manifestPromise
 }
