@@ -39,13 +39,26 @@ jobs:
                   fi
                   echo "NPM_TOKEN is present."
 
+            # setup-node's pnpm cache needs a lockfile to build its cache key and hard fails without
+            # one, blaming the cache for what is really a missing lockfile. Probing first turns that
+            # into a plain "no cache", so the install below is free to report the actual cause.
+            - name: Look for the lockfile
+              id: lockfile
+              run: |
+                  if [ -f pnpm-lock.yaml ]; then
+                      echo "cache=pnpm" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "cache=" >> "$GITHUB_OUTPUT"
+                      echo "::warning::No pnpm-lock.yaml in this repository: the dependency cache is disabled and the install will fail, because a release has to build from a committed lockfile."
+                  fi
+
             # No version input: pnpm/action-setup reads packageManager from package.json.
             - uses: pnpm/action-setup@v4
 
             - uses: actions/setup-node@v4
               with:
                   node-version: 20
-                  cache: pnpm
+                  cache: ${{ steps.lockfile.outputs.cache }}
                   registry-url: https://registry.npmjs.org
 
             - name: Install dependencies
