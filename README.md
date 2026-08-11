@@ -1,4 +1,4 @@
-# @mfe-orchestrator/client
+# @mfe-orchestrator-hub/client
 
 Framework agnostic client for [MFE Orchestrator](https://github.com/mfe-orchestrator). It asks the
 console which microfrontends the current environment serves and hands back their ready to use,
@@ -15,7 +15,7 @@ number, does not know that a canary exists. All of that lives in the backend.
 ## Install
 
 ```sh
-pnpm add @mfe-orchestrator/client
+pnpm add @mfe-orchestrator-hub/client
 ```
 
 ## Configure
@@ -23,7 +23,7 @@ pnpm add @mfe-orchestrator/client
 Call `configure()` at the very top of the host entry point, before anything imports a remote.
 
 ```ts
-import { configure } from "@mfe-orchestrator/client"
+import { configure } from "@mfe-orchestrator-hub/client"
 
 configure({
     backendUrl: import.meta.env.VITE_MFE_BACKEND_URL,
@@ -48,7 +48,7 @@ federation({
     name: "shell",
     remotes: {
         checkoutnew: {
-            external: `import('@mfe-orchestrator/client').then(m => m.remoteUrl('checkout-new'))`,
+            external: `import('@mfe-orchestrator-hub/client').then(m => m.remoteUrl('checkout-new'))`,
             externalType: "promise"
         }
     },
@@ -62,7 +62,7 @@ federation({
 new ModuleFederationPlugin({
     name: "shell",
     remotes: {
-        checkoutnew: `promise import('@mfe-orchestrator/client').then(m => m.remoteUrl('checkout-new'))`
+        checkoutnew: `promise import('@mfe-orchestrator-hub/client').then(m => m.remoteUrl('checkout-new'))`
     },
     shared: { react: { singleton: true }, "react-dom": { singleton: true } }
 })
@@ -100,7 +100,7 @@ exported as well.
 ### `remoteUrl(slug)`
 
 ```ts
-import { remoteUrl } from "@mfe-orchestrator/client"
+import { remoteUrl } from "@mfe-orchestrator-hub/client"
 
 const url = await remoteUrl("checkout-new")
 // https://console…/serve/mfe/files/auto/<projectId>/checkout-new/_v/1.5.0-rc1/assets/remoteEntry.js
@@ -182,9 +182,9 @@ cookies. A network error is surfaced exactly as `fetch` produced it.
 
 ## Framework adapters
 
-- React — [`@mfe-orchestrator/client-react`](https://github.com/mfe-orchestrator/client-react)
-- Vue — [`@mfe-orchestrator/client-vue`](https://github.com/mfe-orchestrator/client-vue)
-- Angular — [`@mfe-orchestrator/client-angular`](https://github.com/mfe-orchestrator/client-angular)
+- React — [`@mfe-orchestrator-hub/client-react`](https://github.com/mfe-orchestrator/client-react)
+- Vue — [`@mfe-orchestrator-hub/client-vue`](https://github.com/mfe-orchestrator/client-vue)
+- Angular — [`@mfe-orchestrator-hub/client-angular`](https://github.com/mfe-orchestrator/client-angular)
 
 They are ergonomics only: every decision lives here, in the core.
 
