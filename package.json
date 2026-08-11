@@ -1,0 +1,67 @@
+{
+    "name": "@mfe-orchestrator-hub/client",
+    "version": "0.1.0",
+    "description": "Framework agnostic client for MFE Orchestrator: resolves version pinned microfrontend URLs from the console manifest",
+    "license": "MIT",
+    "author": "Lorenzo De Francesco",
+    "type": "module",
+    "packageManager": "pnpm@10.19.0",
+    "engines": {
+        "node": ">=20.0.0"
+    },
+    "keywords": [
+        "mfe",
+        "microfrontend",
+        "module-federation",
+        "orchestrator",
+        "vite",
+        "webpack"
+    ],
+    "homepage": "https://github.com/mfe-orchestrator/client-core#readme",
+    "bugs": {
+        "url": "https://github.com/mfe-orchestrator/client-core/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/mfe-orchestrator/client-core.git"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "files": [
+        "dist"
+    ],
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./dist/index.d.ts",
+                "default": "./dist/index.js"
+            },
+            "require": {
+                "types": "./dist/index.d.cts",
+                "default": "./dist/index.cjs"
+            }
+        },
+        "./package.json": "./package.json"
+    },
+    "sideEffects": false,
+    "scripts": {
+        "build": "tsup",
+        "dev": "tsup --watch",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "typecheck": "tsc --noEmit",
+        "lint": "biome lint --write ./src ./test",
+        "format": "biome format --write ./src ./test",
+        "prepublishOnly": "pnpm build"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.5.7",
+        "tsup": "^8.5.0",
+        "typescript": "^5.9.3",
+        "vitest": "^3.2.4"
+    }
+}
