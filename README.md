@@ -27,8 +27,32 @@ import { configure } from "@mfe-orchestrator-hub/client"
 
 configure({
     backendUrl: import.meta.env.VITE_MFE_BACKEND_URL,
+    projectId: import.meta.env.VITE_MFE_PROJECT_ID
+})
+```
+
+`backendUrl` and `projectId` are the only required options.
+
+### Which environment am I?
+
+`environment` is optional. Leave it out and the client calls the *auto* routes, where the backend
+resolves the environment from the domain the request comes from — the domains you declared for each
+environment in the console. One build then serves staging and production without an environment
+variable to set per deployment.
+
+```ts
+// staging.example.com → the STAGING environment, production.example.com → PROD, decided by the backend
+configure({ backendUrl: "…", projectId: "…" })
+```
+
+Pass it explicitly when the host already knows which environment it belongs to, or when one domain
+has to serve several of them:
+
+```ts
+configure({
+    backendUrl: import.meta.env.VITE_MFE_BACKEND_URL,
     projectId: import.meta.env.VITE_MFE_PROJECT_ID,
-    environment: import.meta.env.VITE_MFE_ENVIRONMENT
+    environment: import.meta.env.VITE_MFE_ENVIRONMENT // ex. "DEV"
 })
 ```
 
@@ -74,7 +98,7 @@ new ModuleFederationPlugin({
 export interface OrchestratorConfig {
     backendUrl: string // ex. "https://console.mfe-orchestrator.dev/api"
     projectId: string
-    environment: string // environment slug, ex. "DEV"
+    environment?: string // environment slug, ex. "DEV". Omitted: resolved by the backend from the domain
     userId?: string | (() => string | undefined | Promise<string | undefined>)
 }
 
@@ -133,6 +157,14 @@ it:
 
 ```
 GET {backendUrl}/serve/all/{projectId}/{environment}
+    ?mfeSessionId=<uuid>&mfeDeviceId=<uuid>&mfeUserId=<optional>
+```
+
+and, when no `environment` is configured, the same request on the auto route, where the backend
+resolves the environment from the domain the request comes from:
+
+```
+GET {backendUrl}/serve/all/auto/{projectId}
     ?mfeSessionId=<uuid>&mfeDeviceId=<uuid>&mfeUserId=<optional>
 ```
 

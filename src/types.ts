@@ -6,8 +6,13 @@ export interface OrchestratorConfig {
     backendUrl: string
     /** Id of the project the host belongs to. */
     projectId: string
-    /** Environment slug, ex. "DEV". */
-    environment: string
+    /**
+     * Environment slug, ex. "DEV". Optional: when it is omitted the client calls the "auto" routes
+     * and the backend resolves the environment from the domain the request comes from, out of the
+     * domains declared for each environment in the console. Pass it explicitly whenever the host
+     * already knows which environment it belongs to, or when one domain serves several of them.
+     */
+    environment?: string
     /**
      * Identity of the logged in user, if the host has one. May be a plain value, a getter, or an
      * async getter resolved right before the manifest request is issued.
@@ -36,7 +41,10 @@ export interface Microfrontend {
     url: string
 }
 
-/** The whole payload of `GET {backendUrl}/serve/all/{projectId}/{environmentSlug}`. */
+/**
+ * The whole payload of `GET {backendUrl}/serve/all/{projectId}/{environmentSlug}`, or of
+ * `GET {backendUrl}/serve/all/auto/{projectId}` when no environment is configured.
+ */
 export interface Manifest {
     globalVariables: GlobalVariable[]
     microfrontends: Microfrontend[]

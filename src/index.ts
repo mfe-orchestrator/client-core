@@ -10,7 +10,7 @@ const NOT_CONFIGURED = `${PREFIX} call configure() first. Configure the client a
 
     import { configure } from "@mfe-orchestrator-hub/client"
 
-    configure({ backendUrl: "…", projectId: "…", environment: "…" })`
+    configure({ backendUrl: "…", projectId: "…" })`
 
 const withoutTrailingSlash = (value: string): string => value.replace(/\/+$/, "")
 
@@ -23,10 +23,21 @@ const sameConfig = (left: OrchestratorConfig, right: OrchestratorConfig): boolea
     left.backendUrl === right.backendUrl && left.projectId === right.projectId && left.environment === right.environment && left.userId === right.userId
 
 const requireConfig = (config: OrchestratorConfig): void => {
-    const missing = (["backendUrl", "projectId", "environment"] as const).filter(key => !config?.[key])
+    // environment is deliberately absent: without it the backend resolves it from the domain.
+    const missing = (["backendUrl", "projectId"] as const).filter(key => !config?.[key])
     if (missing.length > 0) {
         throw new Error(`${PREFIX} configure() is missing required option${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}.`)
     }
+}
+
+/**
+ * Two shapes, one per route family. With an explicit environment the slug is the last segment; with
+ * no environment the "auto" segment takes its place before the project id and the backend resolves
+ * the environment from the domain the request comes from.
+ */
+const manifestPath = (config: OrchestratorConfig): string => {
+    const projectId = encodeURIComponent(config.projectId)
+    return config.environment ? `/serve/all/${projectId}/${encodeURIComponent(config.environment)}` : `/serve/all/auto/${projectId}`
 }
 
 const manifestUrl = async (config: OrchestratorConfig): Promise<string> => {
@@ -37,7 +48,7 @@ const manifestUrl = async (config: OrchestratorConfig): Promise<string> => {
     if (userId) {
         query.set("mfeUserId", userId)
     }
-    return `${withoutTrailingSlash(config.backendUrl)}/serve/all/${encodeURIComponent(config.projectId)}/${encodeURIComponent(config.environment)}?${query.toString()}`
+    return `${withoutTrailingSlash(config.backendUrl)}${manifestPath(config)}?${query.toString()}`
 }
 
 const fetchManifest = async (config: OrchestratorConfig): Promise<Manifest> => {
@@ -56,6 +67,9 @@ const fetchManifest = async (config: OrchestratorConfig): Promise<Manifest> => {
 
 /**
  * Hands the client its configuration. Call it once, synchronously, before any remote is imported.
+ *
+ * `backendUrl` and `projectId` are required. `environment` is not: omitting it makes the client use
+ * the "auto" routes, where the backend resolves the environment from the domain of the host page.
  *
  * Idempotent: calling it again with the same options is a no op, so a framework provider may safely
  * call it on every render. A second call with different options is ignored, with a warning, because
@@ -120,8 +134,10 @@ export const remoteUrl = async (slug: string): Promise<string> => {
     const found = microfrontends.find(microfrontend => microfrontend.slug === slug)
     if (!found) {
         const available = microfrontends.map(microfrontend => `"${microfrontend.slug}"`).join(", ")
-        const { environment } = getState().config ?? { environment: "?" }
-        throw new Error(`${PREFIX} unknown microfrontend slug "${slug}". Available in environment "${environment}": ${available || "none, this environment serves no microfrontend"}.`)
+        const environment = getState().config?.environment
+        // With no configured environment the host cannot name the one it was served: only the backend knows.
+        const where = environment ? `environment "${environment}"` : "the environment resolved from this domain"
+        throw new Error(`${PREFIX} unknown microfrontend slug "${slug}". Available in ${where}: ${available || "none, this environment serves no microfrontend"}.`)
     }
     if (!found.url) {
         throw new Error(`${PREFIX} the microfrontend "${slug}" is in the manifest but carries no url. Check its deployment in the console.`)

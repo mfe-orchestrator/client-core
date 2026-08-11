@@ -33,6 +33,12 @@ export const baseConfig = {
     environment: "DEV"
 }
 
+/** The same host without an environment: the backend resolves it from the domain of the request. */
+export const autoConfig = {
+    backendUrl: baseConfig.backendUrl,
+    projectId: baseConfig.projectId
+}
+
 /**
  * A fresh module registry AND a fresh global state slot, which together simulate a new page load.
  * Storage contents deliberately survive, so a test can prove that ids are read back.

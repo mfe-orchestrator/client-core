@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { DEVICE_ID_KEY, SESSION_ID_KEY } from "../src/storage"
 import {
+    autoConfig,
     baseConfig,
     createMemoryStorage,
     createThrowingStorage,
@@ -143,6 +144,91 @@ describe("@mfe-orchestrator-hub/client", () => {
             await sdk.manifest()
 
             expect(requestedUrl(fetchMock).pathname).toBe("/api/serve/all/p1/DEV")
+        })
+    })
+
+    describe("optional environment", () => {
+        it("given a configuration without environment, when the manifest is fetched, then the auto route is called with the project id after the auto segment", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure(autoConfig)
+
+            await sdk.manifest()
+
+            expect(requestedUrl(fetchMock).pathname).toBe("/api/serve/all/auto/p1")
+        })
+
+        it("given a configuration with an environment, when the manifest is fetched, then the environment route is used exactly as before", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure(baseConfig)
+
+            await sdk.manifest()
+
+            expect(requestedUrl(fetchMock).pathname).toBe("/api/serve/all/p1/DEV")
+        })
+
+        it("given an environment explicitly set to undefined, when the manifest is fetched, then the auto route is called just like when the key is absent", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure({ ...autoConfig, environment: undefined })
+
+            await sdk.manifest()
+
+            expect(requestedUrl(fetchMock).pathname).toBe("/api/serve/all/auto/p1")
+        })
+
+        it("given no environment and a backendUrl with a trailing slash, when the auto url is built, then the path has no double slash", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure({ ...autoConfig, backendUrl: "https://console.test/api/" })
+
+            await sdk.manifest()
+
+            expect(requestedUrl(fetchMock).pathname).toBe("/api/serve/all/auto/p1")
+        })
+
+        it("given no environment, when the manifest is fetched, then the three identities still travel in the query string", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure({ ...autoConfig, userId: "user-42" })
+
+            await sdk.manifest()
+
+            const url = requestedUrl(fetchMock)
+            expect(url.searchParams.get("mfeSessionId")).toMatch(UUID)
+            expect(url.searchParams.get("mfeDeviceId")).toMatch(UUID)
+            expect(url.searchParams.get("mfeUserId")).toBe("user-42")
+        })
+
+        it("given a configuration without environment, when configure is called, then it does not throw and the manifest resolves", async () => {
+            stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+
+            expect(() => sdk.configure(autoConfig)).not.toThrow()
+            await expect(sdk.remoteUrl("catalog")).resolves.toBe(manifestFixture.microfrontends[1].url)
+        })
+
+        it("given no environment and an unknown slug, when its url is requested, then the message points at the environment resolved from the domain", async () => {
+            stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure(autoConfig)
+
+            await expect(sdk.remoteUrl("does-not-exist")).rejects.toThrow(/Available in the environment resolved from this domain: "checkout-new", "catalog"/)
+        })
+
+        it("given no environment, when configure is called again adding one, then the first configuration is kept and the auto route is still used", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+            const sdk = await loadSdk()
+
+            sdk.configure(autoConfig)
+            sdk.configure({ ...autoConfig, environment: "PROD" })
+            await sdk.manifest()
+
+            expect(warn).toHaveBeenCalledTimes(1)
+            expect(requestedUrl(fetchMock).pathname).toBe("/api/serve/all/auto/p1")
+            warn.mockRestore()
         })
     })
 
