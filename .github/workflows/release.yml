@@ -1,0 +1,66 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v*"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    id-token: write # npm provenance signs the package with this
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            # Both guards run before any toolchain setup: a release that cannot succeed should say so
+            # in seconds, not after a full install and build.
+            - name: Check the tag matches the package version
+              if: github.ref_type == 'tag'
+              run: |
+                  tag_version="${GITHUB_REF_NAME#v}"
+                  package_version="$(jq -r .version package.json)"
+                  if [ "$tag_version" != "$package_version" ]; then
+                      echo "::error::Tag ${GITHUB_REF_NAME} asks for ${tag_version} but package.json says ${package_version}. Publishing a version that disagrees with its tag cannot be undone on npm, so nothing was published: align the two and tag again."
+                      exit 1
+                  fi
+                  echo "Tag ${GITHUB_REF_NAME} matches package.json ${package_version}."
+
+            - name: Check the npm token is available
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+              run: |
+                  if [ -z "${NODE_AUTH_TOKEN}" ]; then
+                      echo "::error::NPM_TOKEN is empty for this run. Add it as an organization secret and let this repository read it, otherwise the publish would fail later with an opaque npm 401."
+                      exit 1
+                  fi
+                  echo "NPM_TOKEN is present."
+
+            # No version input: pnpm/action-setup reads packageManager from package.json.
+            - uses: pnpm/action-setup@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: pnpm
+                  registry-url: https://registry.npmjs.org
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Typecheck
+              run: pnpm typecheck
+
+            - name: Test
+              run: pnpm test
+
+            - name: Build
+              run: pnpm build
+
+            - name: Publish to npm
+              run: npm publish --provenance --access public
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
