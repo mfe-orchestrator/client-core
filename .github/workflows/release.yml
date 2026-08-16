@@ -14,7 +14,7 @@ jobs:
     publish:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
 
             # Both guards run before any toolchain setup: a release that cannot succeed should say so
             # in seconds, not after a full install and build.
@@ -53,11 +53,11 @@ jobs:
                   fi
 
             # No version input: pnpm/action-setup reads packageManager from package.json.
-            - uses: pnpm/action-setup@v4
+            - uses: pnpm/action-setup@v6
 
-            - uses: actions/setup-node@v4
+            - uses: actions/setup-node@v7
               with:
-                  node-version: 20
+                  node-version: 22
                   cache: ${{ steps.lockfile.outputs.cache }}
                   registry-url: https://registry.npmjs.org
 
