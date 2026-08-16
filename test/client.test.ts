@@ -637,6 +637,129 @@ describe("@mfe-orchestrator-hub/client", () => {
             expect(requestedUrl(fetchMock).pathname).toBe("/api/serve/all/p1/DEV")
             warn.mockRestore()
         })
+
+        it("given a host trying to change the user through configure, when only the userId differs, then the warning points at setUserId", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+            const sdk = await loadSdk()
+
+            sdk.configure({ ...baseConfig, userId: "user-1" })
+            sdk.configure({ ...baseConfig, userId: "user-2" })
+            await sdk.manifest()
+
+            expect(warn).toHaveBeenCalledTimes(1)
+            expect(String(warn.mock.calls[0][0])).toContain("setUserId()")
+            expect(requestedUrl(fetchMock).searchParams.get("mfeUserId")).toBe("user-1")
+            warn.mockRestore()
+        })
+    })
+
+    describe("setUserId", () => {
+        it("given a manifest already fetched for one user, when the user is replaced, then the next read is a fresh request carrying the new mfeUserId", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure({ ...baseConfig, userId: "user-1" })
+
+            await sdk.manifest()
+            sdk.setUserId("user-2")
+            await sdk.manifest()
+
+            expect(fetchMock).toHaveBeenCalledTimes(2)
+            expect(requestedUrl(fetchMock, 0).searchParams.get("mfeUserId")).toBe("user-1")
+            expect(requestedUrl(fetchMock, 1).searchParams.get("mfeUserId")).toBe("user-2")
+        })
+
+        it("given a logged in user, when undefined is set on logout, then the next request carries no mfeUserId and the other two ids are still sent", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure({ ...baseConfig, userId: "user-1" })
+
+            await sdk.manifest()
+            sdk.setUserId(undefined)
+            await sdk.manifest()
+
+            const url = requestedUrl(fetchMock, 1)
+            expect(fetchMock).toHaveBeenCalledTimes(2)
+            expect(url.searchParams.has("mfeUserId")).toBe(false)
+            expect(url.searchParams.get("mfeSessionId")).toMatch(UUID)
+            expect(url.searchParams.get("mfeDeviceId")).toMatch(UUID)
+        })
+
+        it("given the very same user set again, when the manifest is read, then the memoized one is reused and no further request is issued", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure({ ...baseConfig, userId: "user-1" })
+
+            await sdk.manifest()
+            sdk.setUserId("user-1")
+            sdk.setUserId("user-1")
+            await sdk.manifest()
+
+            expect(fetchMock).toHaveBeenCalledTimes(1)
+        })
+
+        it("given a getter handed over instead of a value, when the manifest is read again, then what it resolves travels in the request", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure(baseConfig)
+
+            await sdk.manifest()
+            sdk.setUserId(async () => "late-user")
+            await sdk.manifest()
+
+            expect(fetchMock).toHaveBeenCalledTimes(2)
+            expect(requestedUrl(fetchMock, 1).searchParams.get("mfeUserId")).toBe("late-user")
+        })
+
+        it("given a user set before anything was read, when the first read happens, then it costs a single request", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure(baseConfig)
+
+            sdk.setUserId("user-1")
+            await sdk.manifest()
+
+            expect(fetchMock).toHaveBeenCalledTimes(1)
+            expect(requestedUrl(fetchMock).searchParams.get("mfeUserId")).toBe("user-1")
+        })
+
+        it("given a request already in flight, when the user is replaced, then the caller awaiting it still receives that manifest and only the next read re-fetches", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure({ ...baseConfig, userId: "user-1" })
+
+            const inFlight = sdk.manifest()
+            sdk.setUserId("user-2")
+
+            await expect(inFlight).resolves.toEqual(manifestFixture)
+            expect(fetchMock).toHaveBeenCalledTimes(1)
+            await sdk.manifest()
+            expect(fetchMock).toHaveBeenCalledTimes(2)
+            expect(requestedUrl(fetchMock, 1).searchParams.get("mfeUserId")).toBe("user-2")
+        })
+
+        it("given a url already handed out, when the user is replaced, then the remote resolved afterwards is the one of the new manifest", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+            sdk.configure({ ...baseConfig, userId: "user-1" })
+
+            await sdk.remoteUrl("checkout-new")
+            sdk.setUserId("user-2")
+            const url = await sdk.remoteUrl("checkout-new")
+
+            expect(fetchMock).toHaveBeenCalledTimes(2)
+            expect(url).toBe(manifestFixture.microfrontends[0].url)
+            expect(requestedUrl(fetchMock, 1).searchParams.get("mfeUserId")).toBe("user-2")
+        })
+
+        it("given configure was never called, when the user is set, then it throws naming setUserId and asking for configure()", async () => {
+            const sdk = await loadSdk()
+
+            const message = attempt(() => sdk.setUserId("user-1"))
+
+            expect(message).toContain("setUserId()")
+            expect(message).toContain("configure()")
+        })
     })
 
     describe("globalVariables", () => {

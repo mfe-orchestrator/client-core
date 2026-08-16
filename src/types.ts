@@ -16,6 +16,10 @@ export interface OrchestratorConfig {
     /**
      * Identity of the logged in user, if the host has one. May be a plain value, a getter, or an
      * async getter resolved right before the manifest request is issued.
+     *
+     * A host that only learns its user later may leave it out here and call `setUserId()` when the
+     * user logs in, logs out or is switched: unlike a second `configure()`, that one takes effect,
+     * because it drops the memoized manifest.
      */
     userId?: string | (() => string | undefined | Promise<string | undefined>)
 }

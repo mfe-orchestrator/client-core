@@ -60,6 +60,18 @@ configure({
 provider may call it on every render. A second call with different options is ignored, with a
 warning, because the manifest of this page load may already be in flight.
 
+### Who is the logged in user?
+
+`userId` is what the backend decides a *user based canary* on: it enrols the ids you list in the
+console, and a page that sends none of them gets the stable version. Pass it here when the host
+already knows its user at boot, as a value or as a getter resolved right before the request:
+
+```ts
+configure({ backendUrl: "…", projectId: "…", userId: () => authStore.getState().user?.id })
+```
+
+When the user only appears later, or changes without a reload, use [`setUserId()`](#setuseriduserid).
+
 ## Bundler configuration
 
 The string below is injected into the host bundle, so the bare specifier is resolved by the host's
@@ -134,6 +146,9 @@ export interface OrchestratorConfig {
 /** Call once, synchronously, before any remote is imported. Idempotent. */
 export function configure(config: OrchestratorConfig): void
 
+/** Replaces the user mid session and drops the memoized manifest. `undefined` on logout. */
+export function setUserId(userId: OrchestratorConfig["userId"]): void
+
 /** Resolves the ready to use, version pinned URL of a remote. Awaits the manifest internally. */
 export function remoteUrl(slug: string): Promise<string>
 
@@ -172,6 +187,33 @@ An unknown slug rejects with a message listing the slugs the environment does se
 const variables = await globalVariables()
 // { API_URL: "https://…", FEATURE_FLAG: "on" }
 ```
+
+### `setUserId(userId)`
+
+The one option that legitimately changes while the page is alive — a login, a logout, an account
+switch — so it has its own setter. Unlike a second `configure()`, this one takes effect: it drops the
+memoized manifest, so the next `manifest()`, `remoteUrl()` or `globalVariables()` asks the backend
+again and is answered for the new user.
+
+```ts
+import { setUserId } from "@mfe-orchestrator-hub/client"
+
+auth.onLogin(user => setUserId(user.id))
+auth.onLogout(() => setUserId(undefined)) // no mfeUserId at all: back to the stable version
+```
+
+It does **not** reload the remotes already imported. The federation runtime keeps the container it
+loaded, so a microfrontend already on the page stays on the version drawn for the previous user, and
+only the remotes resolved after the call see the new one. Two ways out, pick one:
+
+- mount the remotes behind your own auth guard, and set the user before the guard opens — nothing was
+  resolved yet, so the whole page is decided on the right identity;
+- or reload the page after the switch, when it has to be consistent end to end.
+
+Setting the same plain value again is a no op, so an auth store may call it on every emission without
+costing a request. A getter is always taken as a change: what it returns is exactly what this side
+cannot know. A request already in flight is not cancelled — whoever is awaiting it still gets the
+manifest of the previous identity — and calling it before `configure()` throws.
 
 ### `identities()`
 
@@ -215,7 +257,8 @@ backend uses.
 
 `userId` may be a value, a getter, or an async getter. It is resolved as late as possible, right
 before the request is issued, so a host that only knows its user after an auth round trip can pass a
-function.
+function — or hand the user over later with `setUserId()`, which is also how it changes without a
+reload.
 
 Both ids are generated with `crypto.randomUUID()` on first use and persisted. Storage can throw —
 Safari in private mode, disabled storage, hardened browsers that throw on the property access

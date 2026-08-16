@@ -13,8 +13,18 @@ const resolveUserId = async (userId: OrchestratorConfig["userId"]): Promise<stri
     return value === undefined || value === null || value === "" ? undefined : String(value)
 }
 
-const sameConfig = (left: OrchestratorConfig, right: OrchestratorConfig): boolean =>
-    left.backendUrl === right.backendUrl && left.projectId === right.projectId && left.environment === right.environment && left.userId === right.userId
+/** Everything but the identity: the part of the configuration that is fixed for a page load. */
+const sameTarget = (left: OrchestratorConfig, right: OrchestratorConfig): boolean =>
+    left.backendUrl === right.backendUrl && left.projectId === right.projectId && left.environment === right.environment
+
+const sameConfig = (left: OrchestratorConfig, right: OrchestratorConfig): boolean => sameTarget(left, right) && left.userId === right.userId
+
+/**
+ * Whether replacing the identity would change nothing. Two getters are never considered equal, even the
+ * same one twice: what a function returns is exactly what this side cannot know, so a host handing one
+ * over is taken at its word and the manifest is re-fetched.
+ */
+const sameUserId = (left: OrchestratorConfig["userId"], right: OrchestratorConfig["userId"]): boolean => typeof left !== "function" && typeof right !== "function" && left === right
 
 /**
  * Rejects a configuration the client could not use, with a message that names the option, shows what
@@ -106,7 +116,8 @@ const fetchManifest = async (config: OrchestratorConfig): Promise<Manifest> => {
  *
  * Idempotent: calling it again with the same options is a no op, so a framework provider may safely
  * call it on every render. A second call with different options is ignored, with a warning, because
- * the manifest of this page load may already be in flight or resolved.
+ * the manifest of this page load may already be in flight or resolved. The user is the exception, and
+ * it changes through `setUserId()`, not through a second call here.
  */
 export const configure = (config: OrchestratorConfig): void => {
     const state = getState()
@@ -115,13 +126,52 @@ export const configure = (config: OrchestratorConfig): void => {
     if (current) {
         if (!sameConfig(current, config)) {
             console.warn(
-                `${PREFIX} configure() was called again with a different configuration. The first one is kept: ${JSON.stringify({ backendUrl: current.backendUrl, projectId: current.projectId, environment: current.environment })}.`
+                sameTarget(current, config)
+                    ? `${PREFIX} configure() was called again with a different userId. The configuration is fixed for this page load, so this one is ignored: call setUserId() instead, which is the supported way to change the user mid session and also drops the memoized manifest, so the next read is decided on the new identity.`
+                    : `${PREFIX} configure() was called again with a different configuration. The first one is kept: ${JSON.stringify({ backendUrl: current.backendUrl, projectId: current.projectId, environment: current.environment })}.`
             )
         }
         return
     }
     state.config = { ...config }
     warnAboutConfig(config)
+}
+
+/**
+ * Replaces the identity the backend decides a user based canary on, after the client was configured.
+ *
+ * `configure()` is deliberately once only, and this is the one option that legitimately changes while
+ * the page is alive: a login, a logout, an account switch. So it gets its own setter, and that setter
+ * does what `configure()` must not — it drops the memoized manifest, so the next `manifest()`,
+ * `remoteUrl()` or `globalVariables()` asks the backend again and is answered for the new user.
+ *
+ * Pass `undefined` on logout: the next request then carries no `mfeUserId` at all, which is what makes
+ * the backend hand out the stable version again.
+ *
+ * What this does NOT do is reload the remotes already imported. The federation runtime keeps the
+ * container it has, so a microfrontend already on the page stays on the version drawn for the previous
+ * user, and only remotes resolved after this call see the new one. When the whole page must be
+ * consistent, follow the identity change with a reload; when the host mounts its remotes behind its own
+ * auth guard, calling this before the guard opens is enough.
+ *
+ * Setting the same plain value again is a no op, so an auth store may call it on every emission without
+ * costing a request. A getter is always taken as a change, since what it returns is precisely what this
+ * side cannot know.
+ *
+ * A request already in flight is not cancelled: whoever is awaiting it still receives the manifest of
+ * the previous identity. Only the memo is dropped.
+ */
+export const setUserId = (userId: OrchestratorConfig["userId"]): void => {
+    const state = getState()
+    const current = state.config
+    if (!current) {
+        throw new Error(notConfiguredMessage("setUserId()", state.integration))
+    }
+    if (sameUserId(current.userId, userId)) {
+        return
+    }
+    state.config = { ...current, userId }
+    state.manifestPromise = null
 }
 
 /**
