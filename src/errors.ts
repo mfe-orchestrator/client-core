@@ -52,14 +52,20 @@ const WHAT_IT_IS: Record<RequiredOption, string> = {
     projectId: `It is the id of the project in the console: open the project and copy it from its page, ex. "${EXAMPLE_PROJECT_ID}".`
 }
 
-const ENV_VARIABLE: Record<RequiredOption, string> = {
-    backendUrl: "VITE_MFE_BACKEND_URL",
-    projectId: "VITE_MFE_PROJECT_ID"
+/** The name the value travels under from the bundler config into the bundle, per toolchain. */
+const BUILD_VARIABLE: Record<RequiredOption, { vite: string; webpack: string }> = {
+    backendUrl: { vite: "VITE_MFE_BACKEND_URL", webpack: "MFE_BACKEND_URL" },
+    projectId: { vite: "VITE_MFE_PROJECT_ID", webpack: "MFE_PROJECT_ID" }
 }
 
-/** What an option read out of an environment variable that never reached the bundle looks like. */
+/**
+ * What an option that was never substituted into the bundle looks like.
+ *
+ * The bundler config is named before the .env file on purpose: it is where the console writes both
+ * values when it generates the config, so it is where they are missing from when they are missing.
+ */
 const missingEnvHint = (option: RequiredOption): string =>
-    `Nothing arrived here at all, which is what a missing build time variable looks like: check that ${ENV_VARIABLE[option]} (Vite) or its process.env equivalent (webpack) is defined in the build that produced this bundle, and that it is not defined only in a .env file the build never reads.`
+    `Nothing arrived here at all, which is what a value that never reached the bundle looks like: check ${BUILD_VARIABLE[option].vite} (Vite) or ${BUILD_VARIABLE[option].webpack} (webpack) in the build that produced this bundle. The generated configs carry it in the "define" block of vite.config, or in the DefinePlugin of webpack.config, so look there first; declared only in a .env file the build never reads, it looks exactly like this.`
 
 /** Values that mean "the template was never filled in". */
 const PLACEHOLDER = /^(…|\.{3}|undefined|null|nan|<[^>]*>|\{\{[^}]*\}\}|\$\{[^}]*\}|your[-_ ]?[a-z]*|x{3,}|change[-_ ]?me|todo|tbd)$/i

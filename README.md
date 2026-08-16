@@ -92,6 +92,35 @@ new ModuleFederationPlugin({
 })
 ```
 
+### Where `backendUrl` and `projectId` come from
+
+The remotes above resolve themselves through this client, so the bundle has to carry the two
+required options. The console writes them into the bundler config itself rather than into a `.env`:
+the config is the file it commits to your repository, so a fresh clone builds a bundle that already
+knows which console to ask and which project to ask about, with no variable left to set.
+
+```js
+// vite.config.js
+define: {
+    "import.meta.env.VITE_MFE_BACKEND_URL": JSON.stringify("https://console.mfe-orchestrator.dev/api"),
+    "import.meta.env.VITE_MFE_PROJECT_ID": JSON.stringify("6f1b2c3d4e5f6a7b8c9d0e1f")
+}
+```
+
+```js
+// webpack.config.js
+new webpack.DefinePlugin({
+    "process.env.MFE_BACKEND_URL": JSON.stringify("https://console.mfe-orchestrator.dev/api"),
+    "process.env.MFE_PROJECT_ID": JSON.stringify("6f1b2c3d4e5f6a7b8c9d0e1f"),
+    // Verbatim text: the bare `undefined` is what an unset environment looks like, and the backend
+    // then resolves it from the domain. `process` does not exist in a browser, so leaving the key
+    // out would throw instead of reading as undefined.
+    "process.env.MFE_ENVIRONMENT": "undefined"
+})
+```
+
+`configure()` keeps reading the same names either way — a `.env` still works if you prefer one.
+
 ## API
 
 ```ts
@@ -218,7 +247,7 @@ firing a request at `undefined`:
 
   • projectId is missing.
       → It is the id of the project in the console: open the project and copy it from its page, ex. "6f1b2c3d4e5f6a7b8c9d0e1f".
-      → Nothing arrived here at all, which is what a missing build time variable looks like: check that VITE_MFE_PROJECT_ID (Vite) or its process.env equivalent (webpack) is defined in the build that produced this bundle, and that it is not defined only in a .env file the build never reads.
+      → Nothing arrived here at all, which is what a value that never reached the bundle looks like: check VITE_MFE_PROJECT_ID (Vite) or MFE_PROJECT_ID (webpack) in the build that produced this bundle. The generated configs carry it in the "define" block of vite.config, or in the DefinePlugin of webpack.config, so look there first; declared only in a .env file the build never reads, it looks exactly like this.
 
 Configure the client like this:
 
