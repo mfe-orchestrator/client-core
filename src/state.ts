@@ -1,9 +1,12 @@
+import type { Integration } from "./errors"
 import type { Identities, Manifest, OrchestratorConfig } from "./types"
 
 export interface OrchestratorState {
     config: OrchestratorConfig | null
     manifestPromise: Promise<Manifest> | null
     identities: Identities | null
+    /** Set by the framework adapters as they load, so an error prints the snippet of their own API. */
+    integration: Integration
 }
 
 /**
@@ -21,7 +24,7 @@ const globalSlot = globalThis as typeof globalThis & Record<typeof STATE_KEY, Or
 export const getState = (): OrchestratorState => {
     let state = globalSlot[STATE_KEY]
     if (!state) {
-        state = { config: null, manifestPromise: null, identities: null }
+        state = { config: null, manifestPromise: null, identities: null, integration: "core" }
         globalSlot[STATE_KEY] = state
     }
     return state

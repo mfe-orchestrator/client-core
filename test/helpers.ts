@@ -1,6 +1,19 @@
 import { vi } from "vitest"
 import { STATE_KEY } from "../src/state"
-import type { Manifest } from "../src/types"
+import type { Manifest, OrchestratorConfig } from "../src/types"
+
+/** A configuration a TypeScript host could not write, but a JavaScript one hands over every day. */
+export const asConfig = (config: unknown): OrchestratorConfig => config as OrchestratorConfig
+
+/** The message of what `run` throws, so a test can assert several things about one message. */
+export const attempt = (run: () => void): string => {
+    try {
+        run()
+    } catch (thrown) {
+        return thrown instanceof Error ? thrown.message : String(thrown)
+    }
+    throw new Error("expected the call to throw, it did not")
+}
 
 export const manifestFixture: Manifest = {
     globalVariables: [
@@ -144,4 +157,7 @@ export const stubFlakyFetch = (failures: number, payload: unknown = manifestFixt
     return fetchMock
 }
 
-export const requestedUrl = (fetchMock: ReturnType<typeof vi.fn>, call = 0): URL => new URL(fetchMock.mock.calls[call]?.[0] as string)
+export const requestedUrl = (fetchMock: ReturnType<typeof vi.fn>, call = 0): URL => new URL(requestedHref(fetchMock, call))
+
+/** The raw first argument of a call, for a backendUrl that is a path and has no origin to parse. */
+export const requestedHref = (fetchMock: ReturnType<typeof vi.fn>, call = 0): string => String(fetchMock.mock.calls[call]?.[0])

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { DEVICE_ID_KEY, SESSION_ID_KEY } from "../src/storage"
 import {
+    asConfig,
+    attempt,
     autoConfig,
     baseConfig,
     createMemoryStorage,
@@ -10,6 +12,7 @@ import {
     installStorage,
     loadSdk,
     manifestFixture,
+    requestedHref,
     requestedUrl,
     stubFetchOnce,
     stubFlakyFetch
@@ -314,30 +317,38 @@ describe("@mfe-orchestrator-hub/client", () => {
             await expect(sdk.remoteUrl("checkout-new")).rejects.toThrow(/serves no microfrontend/)
         })
 
-        it("given configure was never called, when remoteUrl, manifest or globalVariables are used, then each rejects asking for configure()", async () => {
+        it("given configure was never called, when remoteUrl, manifest or globalVariables are used, then each rejects naming itself and asking for configure()", async () => {
             const fetchMock = stubFetchOnce(manifestFixture)
             const sdk = await loadSdk()
 
-            await expect(sdk.remoteUrl("checkout-new")).rejects.toThrow(/call configure\(\) first/)
-            await expect(sdk.manifest()).rejects.toThrow(/call configure\(\) first/)
-            await expect(sdk.globalVariables()).rejects.toThrow(/call configure\(\) first/)
+            await expect(sdk.remoteUrl("checkout-new")).rejects.toThrow(/the client is not configured: remoteUrl\("checkout-new"\) was called before configure\(\)/)
+            await expect(sdk.manifest()).rejects.toThrow(/the client is not configured: manifest\(\) was called before configure\(\)/)
+            await expect(sdk.globalVariables()).rejects.toThrow(/the client is not configured: globalVariables\(\) was called before configure\(\)/)
             expect(fetchMock).not.toHaveBeenCalled()
+        })
+
+        it("given configure was never called, when a read fails, then the message shows the call to write", async () => {
+            const sdk = await loadSdk()
+
+            await expect(sdk.manifest()).rejects.toThrow(/import \{ configure \} from "@mfe-orchestrator-hub\/client"/)
+            await expect(sdk.manifest()).rejects.toThrow(/at the very top of the host entry point/)
+        })
+
+        it("given a registered framework integration, when a read fails unconfigured, then the snippet is the one of that framework", async () => {
+            const sdk = await loadSdk()
+            sdk.registerIntegration("react")
+
+            await expect(sdk.manifest()).rejects.toThrow(/OrchestratorProvider config=\{\{ backendUrl/)
         })
 
         it("given configure was missing, when it is called afterwards, then the manifest resolves normally", async () => {
             stubFetchOnce(manifestFixture)
             const sdk = await loadSdk()
 
-            await expect(sdk.manifest()).rejects.toThrow(/call configure\(\) first/)
+            await expect(sdk.manifest()).rejects.toThrow(/the client is not configured/)
             sdk.configure(baseConfig)
 
             await expect(sdk.remoteUrl("catalog")).resolves.toBe(manifestFixture.microfrontends[1].url)
-        })
-
-        it("given an incomplete configuration, when configure is called, then it throws naming the missing options", async () => {
-            const sdk = await loadSdk()
-
-            expect(() => sdk.configure({ backendUrl: "", projectId: "", environment: "DEV" })).toThrow(/missing required options: backendUrl, projectId/)
         })
 
         it("given a backend answering with an error status, when the manifest is fetched, then the status is surfaced as is without any retry", async () => {
@@ -356,6 +367,191 @@ describe("@mfe-orchestrator-hub/client", () => {
 
             await expect(sdk.manifest()).rejects.toThrow(TypeError)
             expect(fetchMock).toHaveBeenCalledTimes(1)
+        })
+    })
+
+    describe("speaking configuration errors", () => {
+        it("given both required options missing, when configure is called, then the message names them, says what they are and shows the call to write", async () => {
+            const sdk = await loadSdk()
+
+            const thrown = attempt(() => sdk.configure(asConfig({})))
+
+            expect(thrown).toMatch(/configure\(\) cannot start the client: backendUrl and projectId are not usable/)
+            expect(thrown).toMatch(/• backendUrl is missing\./)
+            expect(thrown).toMatch(/• projectId is missing\./)
+            expect(thrown).toMatch(/It is the base URL of the console API/)
+            expect(thrown).toMatch(/It is the id of the project in the console/)
+            expect(thrown).toMatch(/VITE_MFE_BACKEND_URL/)
+            expect(thrown).toMatch(/VITE_MFE_PROJECT_ID/)
+            expect(thrown).toMatch(/ {4}configure\(\{\n {8}backendUrl: "https:\/\/console\.mfe-orchestrator\.dev\/api"/)
+        })
+
+        it("given one required option missing, when configure is called, then only that one is reported, in the singular", async () => {
+            const sdk = await loadSdk()
+
+            const thrown = attempt(() => sdk.configure(asConfig({ backendUrl: "https://console.test/api" })))
+
+            expect(thrown).toMatch(/cannot start the client: projectId is not usable/)
+            expect(thrown).not.toMatch(/• backendUrl/)
+        })
+
+        it("given empty strings, when configure is called, then they are reported as empty, not as missing", async () => {
+            const sdk = await loadSdk()
+
+            const thrown = attempt(() => sdk.configure({ backendUrl: "", projectId: "   ", environment: "DEV" }))
+
+            expect(thrown).toMatch(/• backendUrl is an empty string\./)
+            expect(thrown).toMatch(/• projectId holds nothing but whitespace\./)
+        })
+
+        it("given projectID instead of projectId, when configure is called, then the message points at the misspelled key", async () => {
+            const sdk = await loadSdk()
+
+            const thrown = attempt(() => sdk.configure(asConfig({ backendUrl: "https://console.test/api", projectID: "p1" })))
+
+            expect(thrown).toMatch(/• projectId is missing\./)
+            expect(thrown).toMatch(/carries "projectID", which the client ignores/)
+            // The environment variable hint would be wrong here: the value did arrive, under another name.
+            expect(thrown).not.toMatch(/VITE_MFE_PROJECT_ID/)
+        })
+
+        it("given backend_url instead of backendUrl, when configure is called, then the message points at the misspelled key", async () => {
+            const sdk = await loadSdk()
+
+            const thrown = attempt(() => sdk.configure(asConfig({ backend_url: "https://console.test/api", projectId: "p1" })))
+
+            expect(thrown).toMatch(/carries "backend_url", which the client ignores/)
+        })
+
+        it("given an environment variable that never reached the bundle, when configure is called, then the string undefined is called out as a placeholder", async () => {
+            const sdk = await loadSdk()
+
+            const thrown = attempt(() => sdk.configure({ backendUrl: "https://console.test/api", projectId: "undefined" }))
+
+            expect(thrown).toMatch(/• projectId is still the placeholder "undefined"\./)
+            expect(thrown).toMatch(/VITE_MFE_PROJECT_ID/)
+        })
+
+        it("given a template that was never filled in, when configure is called, then it is reported as a placeholder", async () => {
+            const sdk = await loadSdk()
+
+            expect(attempt(() => sdk.configure({ backendUrl: "https://console.test/api", projectId: "<your-project-id>" }))).toMatch(/is still the placeholder "<your-project-id>"/)
+            expect(attempt(() => sdk.configure({ backendUrl: "…", projectId: "p1" }))).toMatch(/is still the placeholder "…"/)
+        })
+
+        it("given a non string option, when configure is called, then the message names the type it received", async () => {
+            const sdk = await loadSdk()
+
+            const thrown = attempt(() => sdk.configure(asConfig({ backendUrl: 8080, projectId: { id: "p1" } })))
+
+            expect(thrown).toMatch(/• backendUrl is a number \(8080\), not a string\./)
+            expect(thrown).toMatch(/• projectId is a object, not a string\./)
+        })
+
+        it("given a backendUrl without protocol, when configure is called, then the message suggests the two forms that work", async () => {
+            const sdk = await loadSdk()
+
+            const thrown = attempt(() => sdk.configure({ backendUrl: "console.test/api", projectId: "p1" }))
+
+            expect(thrown).toMatch(/• backendUrl is "console\.test\/api", which is not a URL\./)
+            expect(thrown).toMatch(/write "https:\/\/console\.test\/api" instead, or "\/console\.test\/api"/)
+        })
+
+        it("given a bare host and port, when configure is called, then the message explains that it is read as a scheme", async () => {
+            const sdk = await loadSdk()
+
+            const thrown = attempt(() => sdk.configure({ backendUrl: "localhost:3000/api", projectId: "p1" }))
+
+            expect(thrown).toMatch(/whose "localhost" scheme is neither http nor https/)
+        })
+
+        it("given a backendUrl that is a path on the same origin, when configure is called, then it is accepted", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const sdk = await loadSdk()
+
+            expect(() => sdk.configure({ backendUrl: "/api/", projectId: "p1", environment: "DEV" })).not.toThrow()
+            await sdk.manifest()
+
+            expect(requestedHref(fetchMock)).toMatch(/^\/api\/serve\/all\/p1\/DEV\?/)
+        })
+
+        it("given a projectId padded with whitespace, when configure is called, then the percent encoding trap is spelled out", async () => {
+            const sdk = await loadSdk()
+
+            expect(attempt(() => sdk.configure({ backendUrl: "https://console.test/api", projectId: " p1 " }))).toMatch(/is " p1 ", padded with whitespace/)
+        })
+
+        it("given no argument at all, when configure is called, then the message says an object was expected", async () => {
+            const sdk = await loadSdk()
+
+            expect(attempt(() => sdk.configure(asConfig(undefined)))).toMatch(/configure\(\) was called with no argument instead of a configuration object/)
+            expect(attempt(() => sdk.configure(asConfig("https://console.test/api")))).toMatch(/called with a string \(https:\/\/console\.test\/api\) instead of a configuration object/)
+        })
+
+        it("given a registered framework integration, when the configuration is invalid, then the snippet is the one of that framework", async () => {
+            const sdk = await loadSdk()
+            sdk.registerIntegration("angular")
+
+            const thrown = attempt(() => sdk.configure(asConfig({})))
+
+            expect(thrown).toMatch(/provideOrchestrator\(\{ backendUrl/)
+            expect(thrown).toMatch(/bootstrapApplication\(AppComponent/)
+        })
+
+        it("given a non string environment, when configure is called, then it is rejected on its own", async () => {
+            const sdk = await loadSdk()
+
+            expect(attempt(() => sdk.configure(asConfig({ backendUrl: "https://console.test/api", projectId: "p1", environment: 2 })))).toMatch(/environment as a number, not a string/)
+        })
+
+        it("given an empty environment, when configure is called, then it is accepted with a warning that the auto route will be used", async () => {
+            const fetchMock = stubFetchOnce(manifestFixture)
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+            const sdk = await loadSdk()
+
+            sdk.configure({ ...baseConfig, environment: "" })
+            await sdk.manifest()
+
+            expect(warn).toHaveBeenCalledTimes(1)
+            expect(String(warn.mock.calls[0]?.[0])).toMatch(/empty environment, so the client falls back to the auto routes/)
+            expect(requestedUrl(fetchMock).pathname).toBe("/api/serve/all/auto/p1")
+            warn.mockRestore()
+        })
+
+        it("given a valid configuration handed over twice, when configure runs again, then nothing is warned about the environment", async () => {
+            stubFetchOnce(manifestFixture)
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+            const sdk = await loadSdk()
+
+            sdk.configure(baseConfig)
+            sdk.configure(baseConfig)
+
+            expect(warn).not.toHaveBeenCalled()
+            warn.mockRestore()
+        })
+
+        it("given a 404 on the manifest route, when it is surfaced, then the message says which two things the backend could not find", async () => {
+            stubFetchOnce(null, { ok: false, status: 404, statusText: "Not Found" })
+            const sdk = await loadSdk()
+            sdk.configure(baseConfig)
+
+            await expect(sdk.manifest()).rejects.toThrow(/the project id "p1" is not a project of this console, or the environment "DEV" does not exist in it/)
+        })
+
+        it("given a 404 on the auto route, when it is surfaced, then the message points at the domains declared for the environments", async () => {
+            stubFetchOnce(null, { ok: false, status: 404, statusText: "Not Found" })
+            const sdk = await loadSdk()
+            sdk.configure(autoConfig)
+
+            await expect(sdk.manifest()).rejects.toThrow(/no environment of that project declares the domain this page is served on/)
+        })
+
+        it("given a 403 on the manifest route, when it is surfaced, then the message names the project id that was refused", async () => {
+            stubFetchOnce(null, { ok: false, status: 403, statusText: "Forbidden" })
+            const sdk = await loadSdk()
+            sdk.configure(baseConfig)
+
+            await expect(sdk.manifest()).rejects.toThrow(/The console refused the request.*project id "p1"/s)
         })
     })
 

@@ -207,6 +207,49 @@ This is not a retry: nothing here loops, schedules or backs off. It only means t
 or one 502 during a console redeploy does not condemn the page to reject every `remoteUrl()` until a
 full reload. Recovering is the host app's call, by asking again.
 
+## When the configuration is wrong
+
+`backendUrl` and `projectId` almost always come from build time variables, so the usual failure is
+not a wrong value but a value that never reached the bundle. The client says so out loud instead of
+firing a request at `undefined`:
+
+```text
+[@mfe-orchestrator-hub/client] configure() cannot start the client: projectId is not usable.
+
+  • projectId is missing.
+      → It is the id of the project in the console: open the project and copy it from its page, ex. "6f1b2c3d4e5f6a7b8c9d0e1f".
+      → Nothing arrived here at all, which is what a missing build time variable looks like: check that VITE_MFE_PROJECT_ID (Vite) or its process.env equivalent (webpack) is defined in the build that produced this bundle, and that it is not defined only in a .env file the build never reads.
+
+Configure the client like this:
+
+    import { configure } from "@mfe-orchestrator-hub/client"
+
+    configure({
+        backendUrl: "https://console.mfe-orchestrator.dev/api",
+        projectId: "6f1b2c3d4e5f6a7b8c9d0e1f"
+    })
+
+Call it once, at the very top of the host entry point, before anything imports a remote.
+```
+
+`configure()` throws, before anything is stored, when an option is:
+
+| What arrived | What the message says |
+| --- | --- |
+| `undefined`, `null`, `""`, `"   "` | missing or empty, plus the environment variable to check |
+| `projectID`, `backend_url`, `apiUrl`… | the key the client ignores, and how the option is spelled |
+| `"undefined"`, `"…"`, `"<your-project-id>"` | a placeholder that was never filled in |
+| a number, an object, an array | the type it received, instead of a string |
+| `"console.test/api"` | not a URL: the two forms that do work, with and without protocol |
+| `"localhost:3000/api"` | a bare `host:port` is read as a scheme, write `http://localhost:3000/api` |
+| `" p1 "` as `projectId` | padded with whitespace, which would be percent encoded into the URL |
+
+Reading anything before `configure()` ran rejects with the same guidance, naming the call that was
+made too early. A `404` on the manifest route says which two things the backend could not find, the
+project id or the environment, since it answers the same status for both. Every message shows the
+snippet of the package the host actually uses: `<OrchestratorProvider>` for React,
+`createOrchestrator()` for Vue, `provideOrchestrator()` for Angular.
+
 ## Not in v1
 
 No automatic retries, no offline caching, no service worker, and nothing that reads or writes
