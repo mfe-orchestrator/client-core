@@ -1,8 +1,12 @@
 # @mfe-orchestrator-hub/client
 
-Framework agnostic client for [MFE Orchestrator](https://github.com/mfe-orchestrator). It asks the
-console which microfrontends the current environment serves and hands back their ready to use,
-version pinned URLs.
+**Part of [MFE Orchestrator](https://mfe-orchestrator.dev)** — the control plane for your
+microfrontends. The site is the short version; the
+[documentation](https://mfe-orchestrator.dev/documentation/docs/integration/client-sdk) is where this
+package sits in context: environments, deployments, canary releases.
+
+Framework agnostic client for the platform. It asks the console which microfrontends the current
+environment serves and hands back their ready to use, version pinned URLs.
 
 Zero runtime dependencies, ESM + CJS, ships its own types.
 
